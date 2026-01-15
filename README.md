@@ -1,2 +1,2 @@
-# Drone-with-PID
+# Eagle
 A drone made using F450 frame with flight controller custom made using Arduino with PID implementation with the help of MPU6050.
