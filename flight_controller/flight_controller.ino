@@ -15,6 +15,29 @@ float AccErrorX, AccErrorY, GyroErrorX, GyroErrorY;
 float elapsedTime, currentTime, previousTime;
 int c = 0;
 
+// ===== Limits =====
+#define MAX_ANGLE 30.0f   // degrees
+
+// ===== PID gains (start small) =====
+float Kp = 4.0;
+float Ki = 0.03;
+float Kd = 1.8;
+
+// ===== Setpoints =====
+float rollSetpoint  = 0;
+float pitchSetpoint = 0;
+
+// ===== PID memory =====
+float rollError, rollPrevError;
+float pitchError, pitchPrevError;
+
+float rollIntegral = 0;
+float pitchIntegral = 0;
+
+// ===== PID outputs =====
+float rollOutput = 0;
+float pitchOutput = 0;
+
 #define CE_PIN 9
 #define CSN_PIN 10
 #define en_esc A0
@@ -130,11 +153,61 @@ void getData() {
 
 void loop() {
   
-//  if (radio.available()) {
-//    radio.read(&joy, sizeof(joy));
-//    getData();
-//  }
-read_IMU();
+  if (radio.available()) {
+    radio.read(&joy, sizeof(joy));
+    getData();
+    
+    read_IMU();
+    
+    rollSetpoint  = ((float)joy.xAxis / 32767.0f) * MAX_ANGLE;
+    pitchSetpoint = ((float)joy.yAxis / 32767.0f) * MAX_ANGLE;
+
+    runPID(elapsedTime); 
+
+    int throttle = map(joy.rYaxis, -32768, 32767, 1000, 2000);
+
+    if (throttle < 1050) {
+      rollIntegral = 0;
+      pitchIntegral = 0;
+    }
+
+    int FRspeed = throttle - rollOutput - pitchOutput;
+    int FLspeed = throttle + rollOutput - pitchOutput;
+    int BRspeed = throttle - rollOutput + pitchOutput;
+    int BLspeed = throttle + rollOutput + pitchOutput;
+
+    FRspeed = constrain(FRspeed, 1000, 2000);
+    FLspeed = constrain(FLspeed, 1000, 2000);
+    BRspeed = constrain(BRspeed, 1000, 2000);
+    BLspeed = constrain(BLspeed, 1000, 2000);
+
+    FR.writeMicroseconds(FRspeed);
+    FL.writeMicroseconds(FLspeed);
+    BR.writeMicroseconds(BRspeed);
+    BL.writeMicroseconds(BLspeed);
+  }
+
+}
+
+void runPID(float dt) {
+
+  // ===== ROLL =====
+  rollError = rollSetpoint - angleX;
+  rollIntegral += rollError * dt;
+  rollIntegral = constrain(rollIntegral, -50, 50);   // anti-windup
+  float rollDerivative = (rollError - rollPrevError) / dt;
+
+  rollOutput = Kp*rollError + Ki*rollIntegral + Kd*rollDerivative;
+  rollPrevError = rollError;
+
+  // ===== PITCH =====
+  pitchError = pitchSetpoint - angleY;
+  pitchIntegral += pitchError * dt;
+  pitchIntegral = constrain(pitchIntegral, -50, 50);
+  float pitchDerivative = (pitchError - pitchPrevError) / dt;
+
+  pitchOutput = Kp*pitchError + Ki*pitchIntegral + Kd*pitchDerivative;
+  pitchPrevError = pitchError;
 }
 
 void initialize_MPU6050() {
